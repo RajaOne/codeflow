@@ -29,26 +29,26 @@
 
     </extensions>
     <actions>
+        <action
+                id="Codeflow.Draw.ToolsMenu"
+                class="com.raja.codelfow.SearchAction"
+                text="Draw codeflow"
+                description="Draw codeflow">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
 <!--        <action-->
-<!--                id="StackOverflow.AskQuestion.ToolsMenu"-->
+<!--                id="StackOverflow.Search.Editor"-->
 <!--                class="com.raja.codelfow.SearchAction"-->
-<!--                text="Ask Question on Stack Overflow"-->
-<!--                description="Ask a Question on Stack Overflow">-->
-<!--            <add-to-group group-id="ToolsMenu" anchor="last"/>-->
+<!--                text="Search on Stack Overflow"-->
+<!--                description="Search on Stack Overflow">-->
+<!--            <add-to-group group-id="EditorPopupMenu" anchor="last"/>-->
 <!--        </action>-->
-        <action
-                id="StackOverflow.Search.Editor"
-                class="com.raja.codelfow.SearchAction"
-                text="Search on Stack Overflow"
-                description="Search on Stack Overflow">
-            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
-        </action>
-        <action
-                id="StackOverflow.Search.Console"
-                class="com.raja.codelfow.SearchAction"
-                text="Search on Stack Overflow"
-                description="Search on Stack Overflow">
-            <add-to-group group-id="ConsoleEditorPopupMenu" anchor="last"/>
-        </action>
+<!--        <action-->
+<!--                id="StackOverflow.Search.Console"-->
+<!--                class="com.raja.codelfow.SearchAction"-->
+<!--                text="Search on Stack Overflow"-->
+<!--                description="Search on Stack Overflow">-->
+<!--            <add-to-group group-id="ConsoleEditorPopupMenu" anchor="last"/>-->
+<!--        </action>-->
     </actions>
 </idea-plugin>

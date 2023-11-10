@@ -20,6 +20,11 @@ intellij {
     plugins.set(listOf("com.intellij.java"))
 }
 
+dependencies{
+    implementation("org.graphstream:gs-core:2.0")
+    implementation("org.graphstream:gs-ui-swing:2.0")
+}
+
 tasks {
     // Set the JVM compatibility versions
     withType<JavaCompile> {
