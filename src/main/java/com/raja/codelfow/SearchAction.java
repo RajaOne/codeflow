@@ -18,10 +18,7 @@ import org.graphstream.graph.implementations.MultiGraph;
 import org.graphstream.ui.view.Viewer;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.LinkedList;
-import java.util.List;
+import java.util.*;
 
 public class SearchAction extends AnAction {
 
@@ -37,7 +34,7 @@ public class SearchAction extends AnAction {
                 " edge { }");
 
         List<PsiModifierListOwner> componentInheretors = findAllComponentAnnotations(project);
-        List<PsiModifierListOwner> allClasses = new ArrayList<>();
+        Set<PsiModifierListOwner> allClasses = new HashSet<>();
         for (PsiModifierListOwner componentInheretor : componentInheretors) {
             List<PsiModifierListOwner> classes = AnnotationTargetsSearch.search((PsiClass) componentInheretor).findAll().stream()
                     .filter(psiModifierListOwner -> psiModifierListOwner instanceof PsiClassImpl)
