@@ -50,8 +50,34 @@ public class SearchAction extends AnAction {
 
         addComponentAnnotatedClasses(project, nodes);
         addBeans(project, nodes);
+        addAutowiredInterfaces(project, nodes);
 
         displayNodes(nodes);
+    }
+
+    private void addAutowiredInterfaces(Project project, Map<String, Node> nodes) {
+        List<PsiModifierListOwner> componentInheretors = findAllComponentAnnotations(project);
+        Set<PsiClassImpl> allClasses = new HashSet<>();
+        componentInheretors.forEach(componentInheretor -> {
+            List<PsiClassImpl> classes = findAllClassesWithAnnotiation((PsiClass) componentInheretor);
+            classes.stream().forEach(clazz -> {
+//                System.out.println("clazz = " + clazz);
+                Arrays.stream(clazz.getSupers())
+                        .filter(psiClass -> psiClass instanceof PsiClassImpl)
+                        .map(psiClass -> (PsiClassImpl) psiClass)
+                        .forEach(psiClass -> {
+//                            System.out.println("\timplements = " + psiClass);
+                            allClasses.add(psiClass);
+                        });
+            });
+//            List<PsiClassImpl> supers = Arrays.stream(classes.get(0).getSupers())
+//                    .filter(psiClass -> psiClass instanceof PsiClassImpl)
+//                    .map(psiClass -> (PsiClassImpl) psiClass)
+//                    .toList();
+//            allClasses.addAll(supers);
+        });
+        allClasses.forEach(clazz -> nodes.put(clazz.getName(), Node.newComponent(clazz.getName())));
+        allClasses.forEach(clazz -> findReferencesAndAddToNode(nodes, clazz));
     }
 
     private void addComponentAnnotatedClasses(Project project, Map<String, Node> nodes) {

@@ -9,8 +9,8 @@ through all the dependencies.
 - [x] Find usages of `@Component` annotated classes
 - [x] Retrieve all `@Bean`s
 - [x] Find usages of `@Bean`s
+- [x] Retrieve autowired interfaces
 - [ ] Disable `@Configuration` references by default
-- [ ] Retrieve autowired interfaces
 
 ![img.png](img.png)
 ![img_1.png](img_1.png)
