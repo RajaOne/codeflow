@@ -7,8 +7,10 @@ through all the dependencies.
 # Current state
 - [x] Retrieve all (in)direct `@Component` annotated classes
 - [x] Find usages of `@Component` annotated classes
-- [ ] Retrieve all `@Bean`s
-- [ ] Find usages of `@Bean`s
+- [x] Retrieve all `@Bean`s
+- [x] Find usages of `@Bean`s
+- [ ] Disable `@Configuration` references by default
+- [ ] Retrieve autowired interfaces
 
-![img_1.png](img_1.png)
 ![img.png](img.png)
+![img_1.png](img_1.png)
