@@ -23,7 +23,6 @@ import org.graphstream.ui.view.Viewer;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
-import java.util.stream.Stream;
 
 public class SearchAction extends AnAction {
 
@@ -35,38 +34,43 @@ public class SearchAction extends AnAction {
             boolean controller,
             boolean config,
             boolean interfaceImpl,
-            boolean isInterface
+            boolean isInterface,
+            boolean repository
     ) {
         public static Node newComponent(String name) {
-            return new Node(name, true, new ArrayList<>(), false, false, false, false, false);
+            return new Node(name, true, new ArrayList<>(), false, false, false, false, false, false);
         }
 
         public static Node newController(String name) {
-            return new Node(name, true, new ArrayList<>(), false, true, false, false, false);
+            return new Node(name, true, new ArrayList<>(), false, true, false, false, false, false);
         }
 
         public static Node newConfig(String name) {
-            return new Node(name, true, new ArrayList<>(), false, false, true, false, false);
+            return new Node(name, true, new ArrayList<>(), false, false, true, false, false, false);
         }
 
         public static Node newClass(String name) {
-            return new Node(name, false, new ArrayList<>(), false, false, false, false, false);
+            return new Node(name, false, new ArrayList<>(), false, false, false, false, false, false);
         }
 
         public static Node newTestClass(String name) {
-            return new Node(name, false, new ArrayList<>(), true, false, false, false, false);
+            return new Node(name, false, new ArrayList<>(), true, false, false, false, false, false);
         }
 
         public static Node newInterfaceImpl(String name) {
-            return new Node(name, true, new ArrayList<>(), false, false, false, true, false);
+            return new Node(name, true, new ArrayList<>(), false, false, false, true, false, false);
         }
 
         public static Node newInterface(String name) {
-            return new Node(name, false, new ArrayList<>(), false, false, false, false, true);
+            return new Node(name, false, new ArrayList<>(), false, false, false, false, true, false);
+        }
+
+        public static Node newRepository(String name) {
+            return new Node(name, true, new ArrayList<>(), false, false, false, false, false, true);
         }
 
         public Node makeInterfaceImpl() {
-            return new Node(name, isComponent, referencedFrom, test, controller, config, true, false);
+            return new Node(name, isComponent, referencedFrom, test, controller, config, true, false, false);
         }
 
         public void referencedFrom(Node node) {
@@ -98,6 +102,7 @@ public class SearchAction extends AnAction {
                 List<PsiClassImpl> superClasses = Arrays.stream(clazz.getSupers())
                         .filter(psiClass -> psiClass instanceof PsiClassImpl)
                         .map(psiClass -> (PsiClassImpl) psiClass)
+                        .filter(psiClass -> psiClass.isInterface())
                         .toList();
                 if (!superClasses.isEmpty()) {
                     nodes.put(clazz.getName(), nodes.get(clazz.getName()).makeInterfaceImpl());
@@ -117,7 +122,7 @@ public class SearchAction extends AnAction {
             allClasses.addAll(classes);
         });
         allClasses.forEach(clazz -> {
-            if (clazz.getName().endsWith("Test") || clazz.getName().endsWith("IT") || clazz.getName().endsWith("AT")) {
+            if (hasTestLikeName(clazz)) {
                 nodes.put(clazz.getName(), Node.newTestClass(clazz.getName()));
             } else if (Arrays.stream(clazz.getAnnotations())
                     .map(psiAnnotation -> psiAnnotation.resolveAnnotationType().getName())
@@ -127,6 +132,10 @@ public class SearchAction extends AnAction {
                     .map(psiAnnotation -> psiAnnotation.resolveAnnotationType().getName())
                     .anyMatch(s -> s.endsWith("Configuration"))) {
                 nodes.put(clazz.getName(), Node.newConfig(clazz.getName()));
+            } else if (Arrays.stream(clazz.getAnnotations())
+                    .map(psiAnnotation -> psiAnnotation.resolveAnnotationType().getName())
+                    .anyMatch(s -> s.endsWith("Repository"))) {
+                nodes.put(clazz.getName(), Node.newRepository(clazz.getName()));
             } else {
                 nodes.put(clazz.getName(), Node.newComponent(clazz.getName()));
             }
@@ -157,7 +166,7 @@ public class SearchAction extends AnAction {
 
         allReferencesFrom.forEach(fromClass -> {
             if (!nodes.containsKey(fromClass.getName())) {
-                if (fromClass.getName().endsWith("Test") || fromClass.getName().endsWith("IT") || fromClass.getName().endsWith("AT")) {
+                if (hasTestLikeName(fromClass)) {
                     nodes.put(fromClass.getName(), Node.newTestClass(fromClass.getName()));
                 } else {
                     nodes.put(fromClass.getName(), Node.newClass(fromClass.getName()));
@@ -167,6 +176,13 @@ public class SearchAction extends AnAction {
             Node to = nodes.get(psiClass.getName());
             to.referencedFrom(from);
         });
+    }
+
+    private static boolean hasTestLikeName(PsiClass fromClass) {
+        return fromClass.getName().endsWith("Test") ||
+                fromClass.getName().endsWith("IT") ||
+                fromClass.getName().endsWith("AT") ||
+                fromClass.getName().endsWith("E2E");
     }
 
     private void displayNodes(Map<String, Node> nodes) {
@@ -189,9 +205,10 @@ public class SearchAction extends AnAction {
                 addedNode.setAttribute("ui.class", "green");
             }
             if (node.test() || node.config()) {
-                addedNode.setAttribute("ui.class", "gray");
+//                addedNode.setAttribute("ui.class", "gray");
+                graph.removeNode(addedNode);
             }
-            if (node.interfaceImpl() || node.isInterface()) {
+            if (node.interfaceImpl() || node.isInterface() || node.repository()) {
                 addedNode.setAttribute("ui.class", "blue");
             }
             if (node.isComponent()) {
@@ -204,24 +221,30 @@ public class SearchAction extends AnAction {
         });
         nodes.values().forEach(node -> {
             node.referencedFrom().forEach(referencedFrom -> {
+                if (graph.getNode(referencedFrom.name()) == null) {
+                    return;
+                }
+                if (graph.getNode(node.name()) == null) {
+                    return;
+                }
                 Edge addedEdge = graph.addEdge(referencedFrom.name() + node.name(),
                         referencedFrom.name(),
                         node.name(),
                         true);
-                if (referencedFrom.test() || node.test()) {
-                    addedEdge.setAttribute("ui.class", "gray");
-                }
                 if (referencedFrom.controller() || node.controller()) {
                     addedEdge.setAttribute("ui.class", "green");
-                }
-                if (referencedFrom.config() || node.config()) {
-                    addedEdge.setAttribute("ui.class", "gray");
                 }
                 if (referencedFrom.interfaceImpl() || node.interfaceImpl()) {
                     addedEdge.setAttribute("ui.class", "blue");
                 }
                 if (referencedFrom.isInterface() || node.isInterface()) {
                     addedEdge.setAttribute("ui.class", "blue");
+                }
+                if (referencedFrom.test() || node.test()) {
+                    addedEdge.setAttribute("ui.class", "gray");
+                }
+                if (referencedFrom.config() || node.config()) {
+                    addedEdge.setAttribute("ui.class", "gray");
                 }
             });
         });
