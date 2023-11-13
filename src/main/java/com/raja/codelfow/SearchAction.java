@@ -145,6 +145,11 @@ public class SearchAction extends AnAction {
                     nodes.put(fromClass.getName(), Node.newTestClass(fromClass.getName()));
                 } else {
                     nodes.put(fromClass.getName(), Node.newClass(fromClass.getName()));
+                    Arrays.stream(fromClass.getSupers())
+                            .filter(superClass -> superClass instanceof PsiClassImpl)
+                            .map(superClass -> (PsiClassImpl) superClass)
+                            .filter(superClass -> nodes.containsKey(superClass.getName()))
+                            .forEach(superClass -> nodes.get(fromClass.getName()).getInheritsFrom().add(nodes.get(superClass.getName())));
                 }
             }
             Node from = nodes.get(fromClass.getName());
