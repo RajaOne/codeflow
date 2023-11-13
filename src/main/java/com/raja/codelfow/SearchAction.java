@@ -36,6 +36,13 @@ public class SearchAction extends AnAction {
         components.addAll(addComponentAnnotatedClasses(project));
         components.addAll(addBeans(project));
         components.addAll(addAutowiredInterfaces(project));
+        // TODO check entry points like pubsub with and mark component as entry point
+        // ((PsiMethodImpl)((List)AnnotatedElementsSearch.searchPsiMethods(
+        //      JavaPsiFacadeImpl.getInstance(project).findClass("org.springframework.integration.annotation.ServiceActivator", GlobalSearchScope.allScope(project))
+        //  , GlobalSearchScope.projectScope(project)).findAll()).get(0))
+        //  .getAnnotations()[0].getAttributes().get(0)
+        //  .getAttributeName()
+        // should be "inputchannel"
 
         addToNodesAndAddReferences(nodes, components);
 
