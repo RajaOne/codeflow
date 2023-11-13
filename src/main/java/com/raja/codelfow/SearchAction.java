@@ -26,135 +26,110 @@ import java.util.*;
 
 public class SearchAction extends AnAction {
 
-    record Node(
-            String name,
-            boolean isComponent,
-            List<Node> referencedFrom,
-            boolean test,
-            boolean controller,
-            boolean config,
-            boolean interfaceImpl,
-            boolean isInterface,
-            boolean repository
-    ) {
-        public static Node newComponent(String name) {
-            return new Node(name, true, new ArrayList<>(), false, false, false, false, false, false);
-        }
-
-        public static Node newController(String name) {
-            return new Node(name, true, new ArrayList<>(), false, true, false, false, false, false);
-        }
-
-        public static Node newConfig(String name) {
-            return new Node(name, true, new ArrayList<>(), false, false, true, false, false, false);
-        }
-
-        public static Node newClass(String name) {
-            return new Node(name, false, new ArrayList<>(), false, false, false, false, false, false);
-        }
-
-        public static Node newTestClass(String name) {
-            return new Node(name, false, new ArrayList<>(), true, false, false, false, false, false);
-        }
-
-        public static Node newInterfaceImpl(String name) {
-            return new Node(name, true, new ArrayList<>(), false, false, false, true, false, false);
-        }
-
-        public static Node newInterface(String name) {
-            return new Node(name, false, new ArrayList<>(), false, false, false, false, true, false);
-        }
-
-        public static Node newRepository(String name) {
-            return new Node(name, true, new ArrayList<>(), false, false, false, false, false, true);
-        }
-
-        public Node makeInterfaceImpl() {
-            return new Node(name, isComponent, referencedFrom, test, controller, config, true, false, false);
-        }
-
-        public void referencedFrom(Node node) {
-            if (!referencedFrom.contains(node)) {
-                referencedFrom.add(node);
-            }
-        }
-    }
-
     @Override
     public void actionPerformed(@NotNull AnActionEvent e) {
         System.out.println("SearchAction.actionPerformed");
         Project project = e.getData(CommonDataKeys.PROJECT);
         Map<String, Node> nodes = new HashMap<>();
 
-        addComponentAnnotatedClasses(project, nodes);
-        addBeans(project, nodes);
-        addAutowiredInterfaces(project, nodes);
+        Set<PsiClassImpl> components = new HashSet<>();
+        components.addAll(addComponentAnnotatedClasses(project));
+        components.addAll(addBeans(project));
+        components.addAll(addAutowiredInterfaces(project));
+
+        addToNodesAndAddReferences(nodes, components);
 
         displayNodes(nodes);
     }
 
-    private void addAutowiredInterfaces(Project project, Map<String, Node> nodes) {
-        List<PsiModifierListOwner> componentInheretors = findAllComponentAnnotations(project);
+    private void addToNodesAndAddReferences(Map<String, Node> nodes, Set<PsiClassImpl> components) {
+        components.forEach(clazz -> {
+            Node node = Node.newComponent(clazz.getName());
+            if (hasTestLikeName(clazz)) {
+                node.setTest(true);
+            }
+            if (Arrays.stream(clazz.getAnnotations())
+                    .map(psiAnnotation -> psiAnnotation.resolveAnnotationType().getName())
+                    .anyMatch(s -> s.endsWith("Controller"))) {
+                node.setController(true);
+            }
+            if (Arrays.stream(clazz.getAnnotations())
+                    .map(psiAnnotation -> psiAnnotation.resolveAnnotationType().getName())
+                    .anyMatch(s -> s.endsWith("Configuration"))) {
+                node.setConfig(true);
+            }
+            if (Arrays.stream(clazz.getAnnotations())
+                    .map(psiAnnotation -> psiAnnotation.resolveAnnotationType().getName())
+                    .anyMatch(s -> s.endsWith("Repository"))) {
+                node.setRepository(true);
+            }
+            if (clazz.isInterface()) {
+                node.setInterface(true);
+            }
+            nodes.put(clazz.getName(), node);
+        });
+        components.forEach(clazz -> {
+            Arrays.stream(clazz.getSupers()).forEach(psiClass -> {
+                if (psiClass instanceof PsiClassImpl) {
+                    PsiClassImpl superClass = (PsiClassImpl) psiClass;
+                    nodes.get(clazz.getName()).getInheritsFrom().add(nodes.get(superClass.getName()));
+                }
+            });
+        });
+        components.forEach(clazz -> findReferencesAndAddToNode(nodes, clazz));
+    }
+
+    private Set<PsiClassImpl> addAutowiredInterfaces(Project project) {
+        List<PsiModifierListOwner> componentInheritors = findAllComponentAnnotations(project);
         Set<PsiClassImpl> allClasses = new HashSet<>();
-        componentInheretors.forEach(componentInheretor -> {
-            List<PsiClassImpl> classes = findAllClassesWithAnnotation((PsiClass) componentInheretor);
+        componentInheritors.forEach(componentInheritor -> {
+            List<PsiClassImpl> classes = findAllClassesWithAnnotation((PsiClass) componentInheritor);
             classes.stream().forEach(clazz -> {
                 List<PsiClassImpl> superClasses = Arrays.stream(clazz.getSupers())
                         .filter(psiClass -> psiClass instanceof PsiClassImpl)
                         .map(psiClass -> (PsiClassImpl) psiClass)
-                        .filter(psiClass -> psiClass.isInterface())
                         .toList();
-                if (!superClasses.isEmpty()) {
-                    nodes.put(clazz.getName(), nodes.get(clazz.getName()).makeInterfaceImpl());
-                }
-                superClasses.forEach(psiClass -> allClasses.add(psiClass));
+                allClasses.addAll(superClasses);
             });
         });
-        allClasses.forEach(clazz -> nodes.put(clazz.getName(), Node.newInterface(clazz.getName())));
-        allClasses.forEach(clazz -> findReferencesAndAddToNode(nodes, clazz));
-    }
-
-    private void addComponentAnnotatedClasses(Project project, Map<String, Node> nodes) {
-        List<PsiModifierListOwner> componentInheretors = findAllComponentAnnotations(project);
-        Set<PsiClassImpl> allClasses = new HashSet<>();
-        componentInheretors.forEach(componentInheretor -> {
-            List<PsiClassImpl> classes = findAllClassesWithAnnotation((PsiClass) componentInheretor);
-            allClasses.addAll(classes);
-        });
-        allClasses.forEach(clazz -> {
-            if (hasTestLikeName(clazz)) {
-                nodes.put(clazz.getName(), Node.newTestClass(clazz.getName()));
-            } else if (Arrays.stream(clazz.getAnnotations())
-                    .map(psiAnnotation -> psiAnnotation.resolveAnnotationType().getName())
-                    .anyMatch(s -> s.endsWith("Controller"))) {
-                nodes.put(clazz.getName(), Node.newController(clazz.getName()));
-            } else if (Arrays.stream(clazz.getAnnotations())
-                    .map(psiAnnotation -> psiAnnotation.resolveAnnotationType().getName())
-                    .anyMatch(s -> s.endsWith("Configuration"))) {
-                nodes.put(clazz.getName(), Node.newConfig(clazz.getName()));
-            } else if (Arrays.stream(clazz.getAnnotations())
-                    .map(psiAnnotation -> psiAnnotation.resolveAnnotationType().getName())
-                    .anyMatch(s -> s.endsWith("Repository"))) {
-                nodes.put(clazz.getName(), Node.newRepository(clazz.getName()));
-            } else {
-                nodes.put(clazz.getName(), Node.newComponent(clazz.getName()));
-            }
-        });
-        allClasses.forEach(clazz -> findReferencesAndAddToNode(nodes, clazz));
-    }
-
-    private void addBeans(Project project, Map<String, Node> nodes) {
         PsiClass beanClass = findBeanClass(project);
         AnnotatedElementsSearch.searchPsiMethods(beanClass, GlobalSearchScope.projectScope(project)).findAll().stream()
                 .forEach(psiMethod -> {
-//                    System.out.println(psiMethod.getReturnType());
                     PsiElement element = ((PsiClassReferenceType) psiMethod.getReturnType()).getPsiContext().getReference().resolve();
                     if (element instanceof PsiClassImpl) {
                         PsiClassImpl psiClass = (PsiClassImpl) element;
-                        nodes.put(psiClass.getName(), Node.newComponent(psiClass.getName()));
-                        findReferencesAndAddToNode(nodes, psiClass);
+                        List<PsiClassImpl> supers = Arrays.stream(psiClass.getSupers())
+                                .filter(psiClass1 -> psiClass1 instanceof PsiClassImpl)
+                                .map(psiClass1 -> (PsiClassImpl) psiClass1)
+                                .toList();
+                        allClasses.addAll(supers);
                     }
                 });
+        return allClasses;
+    }
+
+    private Set<PsiClassImpl> addComponentAnnotatedClasses(Project project) {
+        List<PsiModifierListOwner> componentInheritors = findAllComponentAnnotations(project);
+        Set<PsiClassImpl> allClasses = new HashSet<>();
+        componentInheritors.forEach(componentInheritor -> {
+            List<PsiClassImpl> classes = findAllClassesWithAnnotation((PsiClass) componentInheritor);
+            allClasses.addAll(classes);
+        });
+        return allClasses;
+    }
+
+    private Set<PsiClassImpl> addBeans(Project project) {
+        PsiClass beanClass = findBeanClass(project);
+        Set<PsiClassImpl> allClasses = new HashSet<>();
+        AnnotatedElementsSearch.searchPsiMethods(beanClass, GlobalSearchScope.projectScope(project)).findAll().stream()
+                .forEach(psiMethod -> {
+                    PsiElement element = ((PsiClassReferenceType) psiMethod.getReturnType()).getPsiContext().getReference().resolve();
+                    if (element instanceof PsiClassImpl) {
+                        PsiClassImpl psiClass = (PsiClassImpl) element;
+                        allClasses.add(psiClass);
+                    }
+                });
+        return allClasses;
     }
 
     private PsiClass findBeanClass(Project project) {
@@ -196,55 +171,60 @@ public class SearchAction extends AnAction {
                 " edge { }" +
                 " edge.gray { fill-color: #999; text-color: #999; z-index: 0; }" +
                 " edge.green { fill-color: #090; text-color: #090; }" +
-                " edge.blue { fill-color: #009; text-color: #009; }"
+                " edge.blue { fill-color: #009; text-color: #009; }" +
+                " edge.inheritance { shape: blob; size: 3px; arrow-shape: none; }"
         );
 
         nodes.values().forEach(node -> {
-            org.graphstream.graph.Node addedNode = graph.addNode(node.name());
-            if (node.controller()) {
+            org.graphstream.graph.Node addedNode = graph.addNode(node.getName());
+            if (node.isController()) {
                 addedNode.setAttribute("ui.class", "green");
             }
-            if (node.test() || node.config()) {
+            if (node.isTest() || node.isConfig()) {
 //                addedNode.setAttribute("ui.class", "gray");
                 graph.removeNode(addedNode);
             }
-            if (node.interfaceImpl() || node.isInterface() || node.repository()) {
+            if (node.isRepository()) {
                 addedNode.setAttribute("ui.class", "blue");
             }
             if (node.isComponent()) {
-                addedNode.setAttribute("ui.label", node.name());
-            } else if (node.isInterface()) {
-                addedNode.setAttribute("ui.label", "<" + node.name() + ">");
+                addedNode.setAttribute("ui.label", node.getName());
             } else {
-                addedNode.setAttribute("ui.label", "[" + node.name() + "]");
+                addedNode.setAttribute("ui.label", "[" + node.getName() + "]");
+            }
+            if (node.isInterface()) {
+                addedNode.setAttribute("ui.label", "<" + node.getName() + ">");
             }
         });
         nodes.values().forEach(node -> {
-            node.referencedFrom().forEach(referencedFrom -> {
-                if (graph.getNode(referencedFrom.name()) == null) {
+            node.getReferencedFrom().forEach(referencedFrom -> {
+                if (graph.getNode(referencedFrom.getName()) == null) {
                     return;
                 }
-                if (graph.getNode(node.name()) == null) {
+                if (graph.getNode(node.getName()) == null) {
                     return;
                 }
-                Edge addedEdge = graph.addEdge(referencedFrom.name() + node.name(),
-                        referencedFrom.name(),
-                        node.name(),
+                Edge addedEdge = graph.addEdge(referencedFrom.getName() + node.getName(),
+                        referencedFrom.getName(),
+                        node.getName(),
                         true);
-                if (referencedFrom.controller() || node.controller()) {
+                if (referencedFrom.isController() || node.isController()) {
                     addedEdge.setAttribute("ui.class", "green");
                 }
-                if (referencedFrom.interfaceImpl() || node.interfaceImpl()) {
+                if (referencedFrom.isRepository() || node.isRepository()) {
                     addedEdge.setAttribute("ui.class", "blue");
                 }
-                if (referencedFrom.isInterface() || node.isInterface()) {
-                    addedEdge.setAttribute("ui.class", "blue");
-                }
-                if (referencedFrom.test() || node.test()) {
+//                if (referencedFrom.isInterface() || node.isInterface()) {
+//                    addedEdge.setAttribute("ui.class", "blue");
+//                }
+                if (referencedFrom.isTest() || node.isTest()) {
                     addedEdge.setAttribute("ui.class", "gray");
                 }
-                if (referencedFrom.config() || node.config()) {
+                if (referencedFrom.isConfig() || node.isConfig()) {
                     addedEdge.setAttribute("ui.class", "gray");
+                }
+                if (referencedFrom.getInheritsFrom().contains(node)) {
+                    addedEdge.setAttribute("ui.class", "inheritance");
                 }
             });
         });
@@ -253,8 +233,8 @@ public class SearchAction extends AnAction {
         display.setCloseFramePolicy(Viewer.CloseFramePolicy.CLOSE_VIEWER);
     }
 
-    private List<PsiClassImpl> findAllClassesWithAnnotation(PsiClass componentInheretor) {
-        return AnnotationTargetsSearch.search(componentInheretor).findAll().stream()
+    private List<PsiClassImpl> findAllClassesWithAnnotation(PsiClass componentInheritor) {
+        return AnnotationTargetsSearch.search(componentInheritor).findAll().stream()
                 .filter(psiModifierListOwner -> psiModifierListOwner instanceof PsiClassImpl)
                 .map(psiModifierListOwner -> (PsiClassImpl) psiModifierListOwner)
                 .toList();

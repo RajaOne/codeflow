@@ -23,6 +23,8 @@ intellij {
 dependencies{
     implementation("org.graphstream:gs-core:2.0")
     implementation("org.graphstream:gs-ui-swing:2.0")
+    compileOnly("org.projectlombok:lombok:1.18.30")
+    annotationProcessor("org.projectlombok:lombok:1.18.30")
 }
 
 tasks {
