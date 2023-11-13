@@ -19,6 +19,7 @@ public class Node {
     private boolean isInterface;
     private boolean repository;
     private List<Node> inheritsFrom;
+    private boolean pubsub;
 
     Node(
             String name,
@@ -41,6 +42,7 @@ public class Node {
         this.isInterface = isInterface;
         this.repository = repository;
         this.inheritsFrom = new ArrayList<>();
+        this.pubsub = false;
     }
 
     public static Node newComponent(String name) {

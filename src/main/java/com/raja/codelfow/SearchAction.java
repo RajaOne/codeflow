@@ -6,6 +6,7 @@ import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiMethod;
 import com.intellij.psi.PsiModifierListOwner;
 import com.intellij.psi.impl.JavaPsiFacadeImpl;
 import com.intellij.psi.impl.compiled.ClsClassImpl;
@@ -30,26 +31,35 @@ public class SearchAction extends AnAction {
     public void actionPerformed(@NotNull AnActionEvent e) {
         System.out.println("SearchAction.actionPerformed");
         Project project = e.getData(CommonDataKeys.PROJECT);
-        Map<String, Node> nodes = new HashMap<>();
 
         Set<PsiClassImpl> components = new HashSet<>();
         components.addAll(addComponentAnnotatedClasses(project));
         components.addAll(addBeans(project));
         components.addAll(addAutowiredInterfaces(project));
-        // TODO check entry points like pubsub with and mark component as entry point
-        // ((PsiMethodImpl)((List)AnnotatedElementsSearch.searchPsiMethods(
-        //      JavaPsiFacadeImpl.getInstance(project).findClass("org.springframework.integration.annotation.ServiceActivator", GlobalSearchScope.allScope(project))
-        //  , GlobalSearchScope.projectScope(project)).findAll()).get(0))
-        //  .getAnnotations()[0].getAttributes().get(0)
-        //  .getAttributeName()
-        // should be "inputchannel"
+        Set<String> pubsubs = markPubsubAsEntryPoints(components, project);
 
-        addToNodesAndAddReferences(nodes, components);
+        Map<String, Node> nodes = addToNodesAndAddReferences(components, pubsubs);
 
         displayNodes(nodes);
     }
 
-    private void addToNodesAndAddReferences(Map<String, Node> nodes, Set<PsiClassImpl> components) {
+    private Set<String> markPubsubAsEntryPoints(Set<PsiClassImpl> components, Project project) {
+        Set<String> pubsubs = new HashSet<>();
+        PsiClass serviceActivatorAnnotation = JavaPsiFacadeImpl.getInstance(project).findClass("org.springframework.integration.annotation.ServiceActivator", GlobalSearchScope.allScope(project));
+        Collection<PsiMethod> methods = AnnotatedElementsSearch.searchPsiMethods(serviceActivatorAnnotation, GlobalSearchScope.projectScope(project)).findAll();
+        methods.forEach(psiMethod -> {
+            boolean isInput = Arrays.stream(psiMethod.getAnnotations())
+                    .anyMatch(ann -> ann.getAttributes().stream().anyMatch(attr -> attr.getAttributeName().equals("inputChannel")));
+            if (isInput) {
+                pubsubs.add(psiMethod.getContainingClass().getName());
+            }
+        });
+
+        return pubsubs;
+    }
+
+    private Map<String, Node> addToNodesAndAddReferences(Set<PsiClassImpl> components, Set<String> pubsubs) {
+        Map<String, Node> nodes = new HashMap<>();
         components.forEach(clazz -> {
             Node node = Node.newComponent(clazz.getName());
             if (hasTestLikeName(clazz)) {
@@ -83,7 +93,13 @@ public class SearchAction extends AnAction {
                 }
             });
         });
+        pubsubs.forEach(pubsub -> {
+            if (nodes.containsKey(pubsub)) {
+                nodes.get(pubsub).setPubsub(true);
+            }
+        });
         components.forEach(clazz -> findReferencesAndAddToNode(nodes, clazz));
+        return nodes;
     }
 
     private Set<PsiClassImpl> addAutowiredInterfaces(Project project) {
@@ -189,7 +205,7 @@ public class SearchAction extends AnAction {
 
         nodes.values().forEach(node -> {
             org.graphstream.graph.Node addedNode = graph.addNode(node.getName());
-            if (node.isController()) {
+            if (node.isController() || node.isPubsub()) {
                 addedNode.setAttribute("ui.class", "green");
             }
             if (node.isTest() || node.isConfig()) {
@@ -220,7 +236,8 @@ public class SearchAction extends AnAction {
                         referencedFrom.getName(),
                         node.getName(),
                         true);
-                if (referencedFrom.isController() || node.isController()) {
+                if (referencedFrom.isController() || node.isController() ||
+                        referencedFrom.isPubsub() || node.isPubsub()) {
                     addedEdge.setAttribute("ui.class", "green");
                 }
                 if (referencedFrom.isRepository() || node.isRepository()) {
