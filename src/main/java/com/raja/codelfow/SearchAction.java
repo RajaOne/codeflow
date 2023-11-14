@@ -16,6 +16,7 @@ import com.intellij.psi.impl.source.PsiJavaCodeReferenceElementImpl;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.search.searches.AnnotatedElementsSearch;
 import com.intellij.psi.search.searches.AnnotationTargetsSearch;
+import com.intellij.psi.search.searches.ClassInheritorsSearch;
 import com.intellij.psi.search.searches.ReferencesSearch;
 import org.graphstream.graph.Edge;
 import org.graphstream.graph.Graph;
@@ -36,14 +37,26 @@ public class SearchAction extends AnAction {
         components.addAll(addComponentAnnotatedClasses(project));
         components.addAll(addBeans(project));
         components.addAll(addAutowiredInterfaces(project));
-        Set<String> pubsubs = markPubsubAsEntryPoints(components, project);
+        Set<PsiClassImpl> repositoryInterfaces = addRepositoryInterfaces(project);
+        components.addAll(repositoryInterfaces);
+        Set<String> pubsubs = markPubsubAsEntryPoints(project);
 
-        Map<String, Node> nodes = addToNodesAndAddReferences(components, pubsubs);
+        Map<String, Node> nodes = addToNodesAndAddReferences(components, pubsubs, repositoryInterfaces);
 
         displayNodes(nodes);
     }
 
-    private Set<String> markPubsubAsEntryPoints(Set<PsiClassImpl> components, Project project) {
+    private Set<PsiClassImpl> addRepositoryInterfaces(Project project) {
+        PsiClass repositoryClass = JavaPsiFacadeImpl.getInstance(project).findClass("org.springframework.data.repository.Repository", GlobalSearchScope.allScope(project));
+        Set<PsiClassImpl> allClasses = new HashSet<>();
+        ClassInheritorsSearch.search(repositoryClass, GlobalSearchScope.projectScope(project), true).findAll().stream()
+                .filter(psiClass -> psiClass instanceof PsiClassImpl)
+                .map(psiClass -> (PsiClassImpl) psiClass)
+                .forEach(allClasses::add);
+        return allClasses;
+    }
+
+    private Set<String> markPubsubAsEntryPoints(Project project) {
         Set<String> pubsubs = new HashSet<>();
         PsiClass serviceActivatorAnnotation = JavaPsiFacadeImpl.getInstance(project).findClass("org.springframework.integration.annotation.ServiceActivator", GlobalSearchScope.allScope(project));
         Collection<PsiMethod> methods = AnnotatedElementsSearch.searchPsiMethods(serviceActivatorAnnotation, GlobalSearchScope.projectScope(project)).findAll();
@@ -58,7 +71,7 @@ public class SearchAction extends AnAction {
         return pubsubs;
     }
 
-    private Map<String, Node> addToNodesAndAddReferences(Set<PsiClassImpl> components, Set<String> pubsubs) {
+    private Map<String, Node> addToNodesAndAddReferences(Set<PsiClassImpl> components, Set<String> pubsubs, Set<PsiClassImpl> repositoryInterfaces) {
         Map<String, Node> nodes = new HashMap<>();
         components.forEach(clazz -> {
             Node node = Node.newComponent(clazz.getName());
@@ -78,6 +91,9 @@ public class SearchAction extends AnAction {
             if (Arrays.stream(clazz.getAnnotations())
                     .map(psiAnnotation -> psiAnnotation.resolveAnnotationType().getName())
                     .anyMatch(s -> s.endsWith("Repository"))) {
+                node.setRepository(true);
+            }
+            if (repositoryInterfaces.contains(clazz)) {
                 node.setRepository(true);
             }
             if (clazz.isInterface()) {
