@@ -25,6 +25,9 @@ import org.graphstream.ui.view.Viewer;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
+import java.util.stream.Collectors;
+
+import static java.util.Collections.emptySet;
 
 public class SearchAction extends AnAction {
 
@@ -59,6 +62,9 @@ public class SearchAction extends AnAction {
     private Set<String> markPubsubAsEntryPoints(Project project) {
         Set<String> pubsubs = new HashSet<>();
         PsiClass serviceActivatorAnnotation = JavaPsiFacadeImpl.getInstance(project).findClass("org.springframework.integration.annotation.ServiceActivator", GlobalSearchScope.allScope(project));
+        if  (serviceActivatorAnnotation == null) {
+            return emptySet();
+        }
         Collection<PsiMethod> methods = AnnotatedElementsSearch.searchPsiMethods(serviceActivatorAnnotation, GlobalSearchScope.projectScope(project)).findAll();
         methods.forEach(psiMethod -> {
             boolean isInput = Arrays.stream(psiMethod.getAnnotations())
@@ -72,7 +78,9 @@ public class SearchAction extends AnAction {
     }
 
     private Map<String, Node> addToNodesAndAddReferences(Set<PsiClassImpl> components, Set<String> pubsubs, Set<PsiClassImpl> repositoryInterfaces) {
+        components = removeTestFiles(components);
         Map<String, Node> nodes = new HashMap<>();
+        Set<PsiClassImpl> finalRepositoryInterfaces = removeTestFiles(repositoryInterfaces);;
         components.forEach(clazz -> {
             Node node = Node.newComponent(clazz.getName());
             if (hasTestLikeName(clazz)) {
@@ -93,7 +101,7 @@ public class SearchAction extends AnAction {
                     .anyMatch(s -> s.endsWith("Repository"))) {
                 node.setRepository(true);
             }
-            if (repositoryInterfaces.contains(clazz)) {
+            if (finalRepositoryInterfaces.contains(clazz)) {
                 node.setRepository(true);
             }
             if (clazz.isInterface()) {
@@ -116,6 +124,12 @@ public class SearchAction extends AnAction {
         });
         components.forEach(clazz -> findReferencesAndAddToNode(nodes, clazz));
         return nodes;
+    }
+
+    private Set<PsiClassImpl> removeTestFiles(Set<PsiClassImpl> components) {
+        return components.stream()
+                .filter(psiClass -> !psiClass.getContainingFile().getVirtualFile().getPath().contains("/test/"))
+                .collect(Collectors.toSet());
     }
 
     private Set<PsiClassImpl> addAutowiredInterfaces(Project project) {
@@ -252,24 +266,28 @@ public class SearchAction extends AnAction {
                         referencedFrom.getName(),
                         node.getName(),
                         true);
+                List<String> classesToAdd = new ArrayList<>();
                 if (referencedFrom.isController() || node.isController() ||
                         referencedFrom.isPubsub() || node.isPubsub()) {
-                    addedEdge.setAttribute("ui.class", "green");
+                    classesToAdd.add("green");
                 }
                 if (referencedFrom.isRepository() || node.isRepository()) {
-                    addedEdge.setAttribute("ui.class", "blue");
+                    classesToAdd.add("blue");
                 }
 //                if (referencedFrom.isInterface() || node.isInterface()) {
 //                    addedEdge.setAttribute("ui.class", "blue");
 //                }
                 if (referencedFrom.isTest() || node.isTest()) {
-                    addedEdge.setAttribute("ui.class", "gray");
+                    classesToAdd.add("gray");
                 }
                 if (referencedFrom.isConfig() || node.isConfig()) {
-                    addedEdge.setAttribute("ui.class", "gray");
+                    classesToAdd.add("gray");
                 }
                 if (referencedFrom.getInheritsFrom().contains(node)) {
-                    addedEdge.setAttribute("ui.class", "inheritance");
+                    classesToAdd.add("inheritance");
+                }
+                if (!classesToAdd.isEmpty()) {
+                    addedEdge.setAttribute("ui.class", classesToAdd.toArray());
                 }
             });
         });
