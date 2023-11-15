@@ -126,9 +126,21 @@ public class SearchAction extends AnAction {
         return nodes;
     }
 
+    private List<PsiClass> removeTestFiles(List<PsiClass> components) {
+        Set<PsiClassImpl> psiClasses = components.stream()
+                .filter(psiClass -> psiClass instanceof PsiClassImpl)
+                .map(psiClass -> (PsiClassImpl) psiClass)
+                .collect(Collectors.toSet());
+        return removeTestFiles(psiClasses).stream()
+                .map(psiClass -> (PsiClass) psiClass)
+                .toList();
+    }
+
     private Set<PsiClassImpl> removeTestFiles(Set<PsiClassImpl> components) {
         return components.stream()
-                .filter(psiClass -> !psiClass.getContainingFile().getVirtualFile().getPath().contains("/test/"))
+                .filter(psiClass -> !psiClass.getContainingFile().getVirtualFile().getPath().contains("/test/") &&
+                        !psiClass.getContainingFile().getVirtualFile().getPath().contains("/it/") &&
+                        !psiClass.getContainingFile().getVirtualFile().getPath().contains("/at/"))
                 .collect(Collectors.toSet());
     }
 
@@ -192,6 +204,7 @@ public class SearchAction extends AnAction {
     private void findReferencesAndAddToNode(Map<String, Node> nodes, PsiClassImpl psiClass) {
         List<PsiClass> allReferencesFrom = findAllReferencesFrom(psiClass);
 
+        allReferencesFrom = removeTestFiles(allReferencesFrom);
         allReferencesFrom.forEach(fromClass -> {
             if (!nodes.containsKey(fromClass.getName())) {
                 if (hasTestLikeName(fromClass)) {
