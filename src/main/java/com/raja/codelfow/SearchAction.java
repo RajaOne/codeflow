@@ -13,6 +13,7 @@ import com.intellij.psi.impl.compiled.ClsClassImpl;
 import com.intellij.psi.impl.source.PsiClassImpl;
 import com.intellij.psi.impl.source.PsiClassReferenceType;
 import com.intellij.psi.impl.source.PsiJavaCodeReferenceElementImpl;
+import com.intellij.psi.impl.source.tree.java.PsiReferenceExpressionImpl;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.search.searches.AnnotatedElementsSearch;
 import com.intellij.psi.search.searches.AnnotationTargetsSearch;
@@ -41,12 +42,48 @@ public class SearchAction extends AnAction {
         components.addAll(addBeans(project));
         components.addAll(addAutowiredInterfaces(project));
         Set<PsiClassImpl> repositoryInterfaces = addRepositoryInterfaces(project);
+        Set<PsiClassImpl> pubsubComponents = findPubsubPubslishComponents(project);
+
         components.addAll(repositoryInterfaces);
         Set<String> pubsubs = markPubsubAsEntryPoints(project);
 
-        Map<String, Node> nodes = addToNodesAndAddReferences(components, pubsubs, repositoryInterfaces);
+        Map<String, Node> nodes = addToNodesAndAddReferences(components, pubsubs, repositoryInterfaces, pubsubComponents);
 
         displayNodes(nodes);
+    }
+
+    private Set<PsiClassImpl> findPubsubPubslishComponents(Project project) {
+        Set<PsiClassImpl> pubsubComponents = new HashSet<>();
+        PsiClass publisherInterface = JavaPsiFacadeImpl.getInstance(project).findClass("com.google.cloud.spring.pubsub.core.publisher.PubSubPublisherOperations", GlobalSearchScope.allScope(project));
+        if (publisherInterface == null) {
+            return emptySet();
+        }
+        List<PsiClass> pubsubClasses = ClassInheritorsSearch.search(publisherInterface, GlobalSearchScope.allScope(project), true).findAll().stream()
+                .toList();
+//                .filter(psiClass -> psiClass instanceof PsiClassImpl)
+//                .map(psiClass -> (PsiClassImpl) psiClass)
+//                .forEach(pubsubComponents::add);
+//        PsiClass pubsub = JavaPsiFacadeImpl.getInstance(project).findClass("com.google.cloud.spring.pubsub.core.PubSubTemplate", GlobalSearchScope.allScope(project));
+        List<PsiMethod> publish = pubsubClasses.stream()
+                .flatMap(psiClass -> Arrays.stream(psiClass.getMethods()))
+                .toList();
+//        List<PsiMethod> publish = Arrays.stream(pubsub.getAllMethods())
+//                .filter(psiMethod -> psiMethod.getName().equals("publish"))
+//                .toList();
+
+        publish.forEach(publishMethod -> {
+            List<PsiClassImpl> components = ReferencesSearch.search(publishMethod, GlobalSearchScope.projectScope(project)).findAll().stream()
+                    .filter(psiReference -> psiReference instanceof PsiReferenceExpressionImpl)
+                    .map(psiReference -> (PsiReferenceExpressionImpl) psiReference)
+                    .map(psiReferenceExpression -> psiReferenceExpression.getContainingFile())
+                    .flatMap(psiFile -> Arrays.stream(psiFile.getChildren()))
+                    .filter(psiElement -> psiElement instanceof PsiClassImpl)
+                    .distinct()
+                    .map(psiElement -> (PsiClassImpl) psiElement)
+                    .toList();
+            pubsubComponents.addAll(components);
+        });
+        return pubsubComponents;
     }
 
     private Set<PsiClassImpl> addRepositoryInterfaces(Project project) {
@@ -77,7 +114,10 @@ public class SearchAction extends AnAction {
         return pubsubs;
     }
 
-    private Map<String, Node> addToNodesAndAddReferences(Set<PsiClassImpl> components, Set<String> pubsubs, Set<PsiClassImpl> repositoryInterfaces) {
+    private Map<String, Node> addToNodesAndAddReferences(Set<PsiClassImpl> components,
+                                                         Set<String> pubsubs,
+                                                         Set<PsiClassImpl> repositoryInterfaces,
+                                                         Set<PsiClassImpl> pubsubComponents) {
         components = removeTestFiles(components);
         Map<String, Node> nodes = new HashMap<>();
         Set<PsiClassImpl> finalRepositoryInterfaces = removeTestFiles(repositoryInterfaces);;
@@ -120,6 +160,11 @@ public class SearchAction extends AnAction {
         pubsubs.forEach(pubsub -> {
             if (nodes.containsKey(pubsub)) {
                 nodes.get(pubsub).setPubsub(true);
+            }
+        });
+        pubsubComponents.forEach(pubsubComponent -> {
+            if (nodes.containsKey(pubsubComponent.getName())) {
+                nodes.get(pubsubComponent.getName()).setRepository(true);
             }
         });
         components.forEach(clazz -> findReferencesAndAddToNode(nodes, clazz));
