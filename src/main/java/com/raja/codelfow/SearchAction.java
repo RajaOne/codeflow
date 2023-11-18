@@ -54,22 +54,24 @@ public class SearchAction extends AnAction {
 
     private Set<PsiClassImpl> findPubsubPubslishComponents(Project project) {
         Set<PsiClassImpl> pubsubComponents = new HashSet<>();
+        Set<PsiClassImpl> pubsubTemplateUsers = pubsubTemplateUsers(project, pubsubComponents);
+        Set<PsiClassImpl> messageChannelUsers = getMessageChannelUsers(project);
+
+        pubsubComponents.addAll(pubsubTemplateUsers);
+        pubsubComponents.addAll(messageChannelUsers);
+        return pubsubComponents;
+    }
+
+    private Set<PsiClassImpl> pubsubTemplateUsers(Project project, Set<PsiClassImpl> pubsubComponents) {
         PsiClass publisherInterface = JavaPsiFacadeImpl.getInstance(project).findClass("com.google.cloud.spring.pubsub.core.publisher.PubSubPublisherOperations", GlobalSearchScope.allScope(project));
         if (publisherInterface == null) {
             return emptySet();
         }
         List<PsiClass> pubsubClasses = ClassInheritorsSearch.search(publisherInterface, GlobalSearchScope.allScope(project), true).findAll().stream()
                 .toList();
-//                .filter(psiClass -> psiClass instanceof PsiClassImpl)
-//                .map(psiClass -> (PsiClassImpl) psiClass)
-//                .forEach(pubsubComponents::add);
-//        PsiClass pubsub = JavaPsiFacadeImpl.getInstance(project).findClass("com.google.cloud.spring.pubsub.core.PubSubTemplate", GlobalSearchScope.allScope(project));
         List<PsiMethod> publish = pubsubClasses.stream()
                 .flatMap(psiClass -> Arrays.stream(psiClass.getMethods()))
                 .toList();
-//        List<PsiMethod> publish = Arrays.stream(pubsub.getAllMethods())
-//                .filter(psiMethod -> psiMethod.getName().equals("publish"))
-//                .toList();
 
         publish.forEach(publishMethod -> {
             List<PsiClassImpl> components = ReferencesSearch.search(publishMethod, GlobalSearchScope.projectScope(project)).findAll().stream()
@@ -84,6 +86,22 @@ public class SearchAction extends AnAction {
             pubsubComponents.addAll(components);
         });
         return pubsubComponents;
+    }
+
+    private Set<PsiClassImpl> getMessageChannelUsers(Project project) {
+        PsiClass messageChannels = JavaPsiFacadeImpl.getInstance(project).findClass("org.springframework.messaging.MessageChannel", GlobalSearchScope.allScope(project));
+        if (messageChannels == null) {
+            return emptySet();
+        }
+        return ReferencesSearch.search(messageChannels, GlobalSearchScope.projectScope(project)).findAll().stream()
+                .filter(psiReference -> psiReference instanceof PsiJavaCodeReferenceElementImpl)
+                .map(psiReference -> (PsiJavaCodeReferenceElementImpl) psiReference)
+                .map(psiJavaCodeReferenceElement -> psiJavaCodeReferenceElement.getContainingFile())
+                .flatMap(psiFile -> Arrays.stream(psiFile.getChildren()))
+                .filter(psiElement -> psiElement instanceof PsiClassImpl)
+                .distinct()
+                .map(psiElement -> (PsiClassImpl) psiElement)
+                .collect(Collectors.toSet());
     }
 
     private Set<PsiClassImpl> addRepositoryInterfaces(Project project) {
