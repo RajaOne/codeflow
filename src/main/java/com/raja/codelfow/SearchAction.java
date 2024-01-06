@@ -106,6 +106,9 @@ public class SearchAction extends AnAction {
 
     private Set<PsiClassImpl> addRepositoryInterfaces(Project project) {
         PsiClass repositoryClass = JavaPsiFacadeImpl.getInstance(project).findClass("org.springframework.data.repository.Repository", GlobalSearchScope.allScope(project));
+        if (repositoryClass == null) {
+            return emptySet();
+        }
         Set<PsiClassImpl> allClasses = new HashSet<>();
         ClassInheritorsSearch.search(repositoryClass, GlobalSearchScope.projectScope(project), true).findAll().stream()
                 .filter(psiClass -> psiClass instanceof PsiClassImpl)
