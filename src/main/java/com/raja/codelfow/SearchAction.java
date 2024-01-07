@@ -3,6 +3,7 @@ package com.raja.codelfow;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
+import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiElement;
@@ -13,6 +14,7 @@ import com.intellij.psi.impl.compiled.ClsClassImpl;
 import com.intellij.psi.impl.source.PsiClassImpl;
 import com.intellij.psi.impl.source.PsiClassReferenceType;
 import com.intellij.psi.impl.source.PsiJavaCodeReferenceElementImpl;
+import com.intellij.psi.impl.source.tree.FileElement;
 import com.intellij.psi.impl.source.tree.java.PsiReferenceExpressionImpl;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.search.searches.AnnotatedElementsSearch;
@@ -22,13 +24,18 @@ import com.intellij.psi.search.searches.ReferencesSearch;
 import org.graphstream.graph.Edge;
 import org.graphstream.graph.Graph;
 import org.graphstream.graph.implementations.MultiGraph;
+import org.graphstream.ui.graphicGraph.GraphicElement;
+import org.graphstream.ui.swing_viewer.DefaultView;
 import org.graphstream.ui.view.Viewer;
 import org.jetbrains.annotations.NotNull;
 
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseListener;
 import java.util.*;
 import java.util.stream.Collectors;
 
 import static java.util.Collections.emptySet;
+import static org.graphstream.ui.view.util.InteractiveElement.*;
 
 public class SearchAction extends AnAction {
 
@@ -49,7 +56,7 @@ public class SearchAction extends AnAction {
 
         Map<String, Node> nodes = addToNodesAndAddReferences(components, pubsubs, repositoryInterfaces, pubsubComponents);
 
-        displayNodes(nodes);
+        displayNodes(nodes, project);
     }
 
     private Set<PsiClassImpl> findPubsubPubslishComponents(Project project) {
@@ -143,7 +150,7 @@ public class SearchAction extends AnAction {
         Map<String, Node> nodes = new HashMap<>();
         Set<PsiClassImpl> finalRepositoryInterfaces = removeTestFiles(repositoryInterfaces);;
         components.forEach(clazz -> {
-            Node node = Node.newComponent(clazz.getName());
+            Node node = Node.newComponent(clazz.getName(), clazz.getQualifiedName());
             if (hasTestLikeName(clazz)) {
                 node.setTest(true);
             }
@@ -274,9 +281,9 @@ public class SearchAction extends AnAction {
         allReferencesFrom.forEach(fromClass -> {
             if (!nodes.containsKey(fromClass.getName())) {
                 if (hasTestLikeName(fromClass)) {
-                    nodes.put(fromClass.getName(), Node.newTestClass(fromClass.getName()));
+                    nodes.put(fromClass.getName(), Node.newTestClass(fromClass.getName(), fromClass.getQualifiedName()));
                 } else {
-                    nodes.put(fromClass.getName(), Node.newClass(fromClass.getName()));
+                    nodes.put(fromClass.getName(), Node.newClass(fromClass.getName(), fromClass.getQualifiedName()));
                     Arrays.stream(fromClass.getSupers())
                             .filter(superClass -> superClass instanceof PsiClassImpl)
                             .map(superClass -> (PsiClassImpl) superClass)
@@ -297,7 +304,7 @@ public class SearchAction extends AnAction {
                 fromClass.getName().endsWith("E2E");
     }
 
-    private void displayNodes(Map<String, Node> nodes) {
+    private void displayNodes(Map<String, Node> nodes, Project project) {
         System.setProperty("org.graphstream.ui", "swing");
         Graph graph = new MultiGraph("tutorial 1");
         graph.setAttribute("ui.stylesheet", "graph { }" +
@@ -314,6 +321,7 @@ public class SearchAction extends AnAction {
 
         nodes.values().forEach(node -> {
             org.graphstream.graph.Node addedNode = graph.addNode(node.getName());
+            addedNode.setAttribute("ui.fullname", node.getFullName());
             if (node.isController() || node.isPubsub()) {
                 addedNode.setAttribute("ui.class", "green");
             }
@@ -373,6 +381,38 @@ public class SearchAction extends AnAction {
 
         Viewer display = graph.display();
         display.setCloseFramePolicy(Viewer.CloseFramePolicy.CLOSE_VIEWER);
+
+        display.getDefaultView().addListener("Mouse", new MouseListener() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                System.out.println("SearchAction.mouseClicked");
+                GraphicElement graphicElementAt = ((DefaultView) e.getSource()).findGraphicElementAt(EnumSet.of(NODE, SPRITE), e.getX(), e.getY());
+                if (graphicElementAt == null) {
+                    return;
+                }
+                String fullName = (String)graphicElementAt.getAttribute("ui.fullname");
+                PsiClass aClass = JavaPsiFacadeImpl.getInstance(project).findClass(fullName, GlobalSearchScope.projectScope(project));
+                FileEditorManager.getInstance(project).openFile(aClass.getContainingFile().getVirtualFile(), true);
+
+            }
+
+            @Override
+            public void mousePressed(MouseEvent e) {
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+            }
+
+            @Override
+            public void mouseEntered(MouseEvent e) {
+            }
+
+            @Override
+            public void mouseExited(MouseEvent e) {
+            }
+        });
+
     }
 
     private List<PsiClassImpl> findAllClassesWithAnnotation(PsiClass componentInheritor) {
