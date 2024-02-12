@@ -14,7 +14,6 @@ import com.intellij.psi.impl.compiled.ClsClassImpl;
 import com.intellij.psi.impl.source.PsiClassImpl;
 import com.intellij.psi.impl.source.PsiClassReferenceType;
 import com.intellij.psi.impl.source.PsiJavaCodeReferenceElementImpl;
-import com.intellij.psi.impl.source.tree.FileElement;
 import com.intellij.psi.impl.source.tree.java.PsiReferenceExpressionImpl;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.search.searches.AnnotatedElementsSearch;
@@ -34,6 +33,7 @@ import java.awt.event.MouseListener;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static java.util.Collections.emptyList;
 import static java.util.Collections.emptySet;
 import static org.graphstream.ui.view.util.InteractiveElement.*;
 
@@ -49,12 +49,19 @@ public class SearchAction extends AnAction {
         components.addAll(addBeans(project));
         components.addAll(addAutowiredInterfaces(project));
         Set<PsiClassImpl> repositoryInterfaces = addRepositoryInterfaces(project);
+        Set<PsiClassImpl> feignInterfaces = addFeignclientInterfaces(project);
         Set<PsiClassImpl> pubsubComponents = findPubsubPubslishComponents(project);
 
         components.addAll(repositoryInterfaces);
+        components.addAll(feignInterfaces);
         Set<String> pubsubs = markPubsubAsEntryPoints(project);
 
-        Map<String, Node> nodes = addToNodesAndAddReferences(components, pubsubs, repositoryInterfaces, pubsubComponents);
+        Map<String, Node> nodes = addToNodesAndAddReferences(
+                components,
+                pubsubs,
+                repositoryInterfaces,
+                pubsubComponents,
+                feignInterfaces);
 
         displayNodes(nodes, project);
     }
@@ -124,6 +131,17 @@ public class SearchAction extends AnAction {
         return allClasses;
     }
 
+    private Set<PsiClassImpl> addFeignclientInterfaces(Project project) {
+        List<PsiModifierListOwner> feignInheritors = findAllFeignAnnotations(project);
+
+        Set<PsiClassImpl> allClasses = new HashSet<>();
+        feignInheritors.forEach(componentInheritor -> {
+            List<PsiClassImpl> classes = findAllClassesWithAnnotation((PsiClass) componentInheritor);
+            allClasses.addAll(classes);
+        });
+        return allClasses;
+    }
+
     private Set<String> markPubsubAsEntryPoints(Project project) {
         Set<String> pubsubs = new HashSet<>();
         PsiClass serviceActivatorAnnotation = JavaPsiFacadeImpl.getInstance(project).findClass("org.springframework.integration.annotation.ServiceActivator", GlobalSearchScope.allScope(project));
@@ -145,10 +163,12 @@ public class SearchAction extends AnAction {
     private Map<String, Node> addToNodesAndAddReferences(Set<PsiClassImpl> components,
                                                          Set<String> pubsubs,
                                                          Set<PsiClassImpl> repositoryInterfaces,
-                                                         Set<PsiClassImpl> pubsubComponents) {
+                                                         Set<PsiClassImpl> pubsubComponents,
+                                                         Set<PsiClassImpl> feignInterfaces) {
         components = removeTestFiles(components);
         Map<String, Node> nodes = new HashMap<>();
         Set<PsiClassImpl> finalRepositoryInterfaces = removeTestFiles(repositoryInterfaces);;
+        Set<PsiClassImpl> finalFeignInterfaces = removeTestFiles(feignInterfaces);;
         components.forEach(clazz -> {
             Node node = Node.newComponent(clazz.getName(), clazz.getQualifiedName());
             if (hasTestLikeName(clazz)) {
@@ -171,6 +191,10 @@ public class SearchAction extends AnAction {
             }
             if (finalRepositoryInterfaces.contains(clazz)) {
                 node.setRepository(true);
+            }
+            if (finalFeignInterfaces.contains(clazz)) {
+                node.setRepository(true);
+                node.setInterface(true);
             }
             if (clazz.isInterface()) {
                 node.setInterface(true);
@@ -435,6 +459,29 @@ public class SearchAction extends AnAction {
 
     private List<PsiModifierListOwner> findAllComponentAnnotations(Project project) {
         PsiClass componentClass = JavaPsiFacadeImpl.getInstance(project).findClass("org.springframework.stereotype.Component", GlobalSearchScope.allScope(project));
+        List<PsiModifierListOwner> components = new ArrayList<>();
+        LinkedList<PsiModifierListOwner> queue = new LinkedList<>();
+        queue.addLast(componentClass);
+
+        while (!queue.isEmpty()) {
+            PsiModifierListOwner current = queue.removeFirst();
+            components.add(current);
+            queue.addAll(AnnotationTargetsSearch.search((PsiClass) current).findAll()
+                    .stream()
+                    .filter(psiModifierListOwner -> psiModifierListOwner instanceof ClsClassImpl)
+                    .map(psiModifierListOwner -> (ClsClassImpl) psiModifierListOwner)
+                    .filter(clsClassImpl -> clsClassImpl.getStub().isAnnotationType())
+                    .toList());
+        }
+
+        return components;
+    }
+
+    private List<PsiModifierListOwner> findAllFeignAnnotations(Project project) {
+        PsiClass componentClass = JavaPsiFacadeImpl.getInstance(project).findClass("org.springframework.cloud.openfeign.FeignClient", GlobalSearchScope.allScope(project));
+        if (componentClass == null) {
+            return emptyList();
+        }
         List<PsiModifierListOwner> components = new ArrayList<>();
         LinkedList<PsiModifierListOwner> queue = new LinkedList<>();
         queue.addLast(componentClass);
